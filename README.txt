@@ -1,5 +1,4 @@
 TBK V125 - Correctif session/profil inscriptions
-mdflbùdf
 
 Contenu : site complet V124 actualisé en V125, plus scripts SQL de diagnostic et réparation.
 

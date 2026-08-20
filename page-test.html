@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Diagnostic TBK</title>
+  <style>
+    body{font-family:system-ui,sans-serif;max-width:900px;margin:40px auto;padding:0 16px;color:#172033}
+    .tbk-card{border:1px solid #d8deea;border-radius:12px;padding:24px;box-shadow:0 4px 18px rgba(0,0,0,.06)}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin:20px 0}
+    button{padding:10px 16px;border:0;border-radius:8px;background:#1666cc;color:#fff;cursor:pointer}
+    button:hover{background:#0f52a8} pre{background:#f4f6fa;padding:16px;border-radius:8px;min-height:120px;white-space:pre-wrap}
+  </style>
+</head>
+<body>
+  <main class="tbk-card">
+    <h1>Diagnostic TBK</h1>
+    <p>Cette page contrôle la session Supabase et la disponibilité de l’Edge Function d’administration.</p>
+    <div class="actions">
+      <button id="btnSession" type="button">Tester la session</button>
+      <button id="btnEdge" type="button">Tester l’Edge Function</button>
+    </div>
+    <pre id="result" aria-live="polite">Sélectionnez un test.</pre>
+  </main>
+  <!-- Charger auparavant les scripts habituels de l’application qui définissent TBK_DB et TBK_AUTH. -->
+  <script src="test-session.js"></script>
+  <script src="test-edge-function.js"></script>
+  <script>
+    const output=document.getElementById('result');
+    function show(value){output.textContent=JSON.stringify(value,null,2);}
+    document.getElementById('btnSession').addEventListener('click',async()=>show(await TBK_TEST_SESSION.checkSession()));
+    document.getElementById('btnEdge').addEventListener('click',async()=>show(await TBK_TEST_EDGE.testEdgeFunction()));
+  </script>
+</body>
+</html>

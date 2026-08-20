@@ -1,0 +1,7 @@
+.inscriptions-container{overflow-x:auto;overflow-y:auto;max-height:75vh}
+#registrations-table{width:max-content;min-width:100%;border-collapse:collapse}
+#registrations-table th,#registrations-table td{min-width:180px;padding:8px;white-space:nowrap}
+#registrations-table th{position:relative}
+#registrations-table thead th{position:sticky;top:0;z-index:10;background:#fff}
+.resize-handle{position:absolute;top:0;right:0;width:8px;height:100%;cursor:col-resize}
+.resize-handle:hover{background:rgba(0,0,0,.15)}
