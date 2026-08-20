@@ -1,5 +1,0 @@
-Ajouter cette ligne en dernier dans index.html, juste avant </body> :
-
-<script src="./tbk-v113-final-consolidation.js"></script>
-
-Le script doit être chargé après les modules V91/V92/V93/V94/V95/V101/V103/V108/V109/V110/V112 si présents.

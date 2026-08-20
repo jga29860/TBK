@@ -1,0 +1,1 @@
+window.TBK_CONFIG={version:'V125',url:'https://cuwxfqltruqvtoqqcejw.supabase.co',anonKey:'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN1d3hmcWx0cnVxdnRvcXFjZWp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Nzg4NTIsImV4cCI6MjEwMjU1NDg1Mn0.ynd6v8c2Sy1-q7u_Mfe94Lk8qNLKrF-YE-TtqWDCaJI',seasonLabel:'2026-2027'};

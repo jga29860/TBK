@@ -1,0 +1,1 @@
+(function(){'use strict';let client;function get(){if(client)return client;const c=TBK_CONFIG;if(!window.supabase||!c.url||!c.anonKey)throw new Error('Configuration Supabase absente');client=window.supabase.createClient(c.url,c.anonKey,{auth:{persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});return client;}window.TBK_DB={get};})();
