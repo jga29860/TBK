@@ -158,13 +158,14 @@
                     Paramétrage des colonnes
                 </h3>
 
-                <table>
+                <table class="column-config-table">
 
                     <thead>
                         <tr>
-                            <th>Ordre</th>
-                            <th>Clé</th>
-                            <th>Nom</th>
+                            <th style="width: 80px;">Ordre</th>
+                            <th style="width: 120px;">Clé</th>
+                            <th style="width: 150px;">Nom</th>
+                            <th style="width: 100px;">Largeur</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
@@ -172,7 +173,7 @@
                     <tbody>
 
                     ${columns.map(c => `
-                        <tr>
+                        <tr data-column-key="${c.column_key}">
 
                             <td>
                                 ${c.sort_order}
@@ -184,6 +185,17 @@
 
                             <td>
                                 ${escapeHtml(c.label)}
+                            </td>
+
+                            <td>
+                                <input 
+                                    type="number" 
+                                    class="column-width-input" 
+                                    value="${c.column_width || 150}"
+                                    min="50"
+                                    max="500"
+                                    data-column-key="${c.column_key}"
+                                > px
                             </td>
 
                             <td>
@@ -229,6 +241,7 @@
 
     function bindColumnAdministration() {
 
+        // Suppression de colonne
         document
             .querySelectorAll("[data-cdelete]")
             .forEach(btn => {
@@ -268,6 +281,113 @@
                     }
                 };
             });
+
+        // Changement de largeur via input
+        document
+            .querySelectorAll(".column-width-input")
+            .forEach(input => {
+
+                input.onchange = async () => {
+
+                    const key = input.dataset.columnKey;
+                    const width = parseInt(input.value, 10);
+
+                    if (isNaN(width) || width < 50 || width > 500) {
+                        showMessage(
+                            "Largeur invalide (50-500 px)",
+                            "error"
+                        );
+                        return;
+                    }
+
+                    try {
+
+                        await TBK_REG.saveColumnWidth(key, width);
+
+                        showMessage(
+                            `Largeur de "${key}" mise à jour`,
+                            "success"
+                        );
+
+                    } catch (e) {
+
+                        showMessage(
+                            e.message,
+                            "error"
+                        );
+                    }
+                };
+            });
+
+        // Redimensionnement drag&drop des colonnes
+        setupColumnResizers();
+    }
+
+    function setupColumnResizers() {
+        const table = $(".column-config-table");
+        if (!table) return;
+
+        const rows = table.querySelectorAll("tbody tr");
+        
+        rows.forEach(row => {
+            const columnKey = row.dataset.columnKey;
+            if (!columnKey) return;
+
+            // Créer un handle de redimensionnement
+            const handle = document.createElement("div");
+            handle.className = "column-resize-handle";
+            handle.title = "Cliquer et faire glisser pour redimensionner";
+            
+            // Insérer après la colonne "Largeur"
+            const cells = row.querySelectorAll("td");
+            if (cells.length >= 4) {
+                cells[3].appendChild(handle);
+            }
+
+            handle.onmousedown = startResize(columnKey, handle);
+        });
+    }
+
+    function startResize(columnKey, handle) {
+        return (e) => {
+            e.preventDefault();
+            
+            const input = handle.closest("tr").querySelector(".column-width-input");
+            if (!input) return;
+
+            const startX = e.clientX;
+            const startWidth = parseInt(input.value, 10);
+
+            function onMouseMove(moveEvent) {
+                const deltaX = moveEvent.clientX - startX;
+                const newWidth = Math.max(50, Math.min(500, startWidth + deltaX));
+                input.value = newWidth;
+            }
+
+            function onMouseUp() {
+                document.removeEventListener("mousemove", onMouseMove);
+                document.removeEventListener("mouseup", onMouseUp);
+                
+                // Sauvegarder la largeur
+                const newWidth = parseInt(input.value, 10);
+                TBK_REG.saveColumnWidth(columnKey, newWidth)
+                    .then(() => {
+                        showMessage(
+                            `Largeur de "${columnKey}" mise à jour`,
+                            "success"
+                        );
+                    })
+                    .catch(err => {
+                        showMessage(
+                            err.message,
+                            "error"
+                        );
+                    });
+            }
+
+            document.addEventListener("mousemove", onMouseMove);
+            document.addEventListener("mouseup", onMouseUp);
+        };
     }
 
     async function navigate(page) {
