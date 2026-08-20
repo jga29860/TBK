@@ -1,23 +1,131 @@
 (function(){
 'use strict';
+
 const db=()=>TBK_DB.get();
-function currentUserId(){const id=TBK_AUTH.session()?.user?.id;if(!id)throw new Error('Session expirée. Reconnectez-vous.');return id;}
-let season=null,rows=[],columns=[],settings={cotisation_adulte:40,cotisation_jeune:30,supplement_bad_ping:10,supplement_ufolep:20,reduction_bureau:0};
+
+function currentUserId(){
+  try{
+    return TBK_AUTH.session()?.user?.id || null;
+  }catch(error){
+    console.warn('[TBK_REG] Impossible de lire la session utilisateur.',error);
+    return null;
+  }
+}
+
+function auditFields(){
+  const userId=currentUserId();
+  return {
+    ...(userId?{updated_by:userId}:{}),
+    updated_at:new Date().toISOString()
+  };
+}
+
+function normalizeError(error,defaultMessage){
+  console.error('[TBK_REG]',error);
+  const message=error?.message || defaultMessage;
+  if(/jwt|session|token|auth/i.test(message)){
+    return new Error('Votre session semble expirée. Les données saisies sont conservées à l’écran. Reconnectez-vous puis relancez l’enregistrement.');
+  }
+  return new Error(message);
+}
+
+let season=null,rows=[],columns=[],settings={
+  cotisation_adulte:40,
+  cotisation_jeune:30,
+  supplement_bad_ping:10,
+  supplement_ufolep:20,
+  reduction_bureau:0
+};
+
 const builtins=[
  ['nom','Nom','text',[],10],['prenom','Prénom','text',[],20],['categorie','Catégorie','select',['Adulte','Jeune'],30],['ufolep','UFOLEP / FSGT','select',['Non','Oui'],40],['whatsapp','WhatsApp','select',['Non','Oui'],50],['sport','Sport','select',['Bad','Ping','Bad et Ping'],60],['montant_cotisation','Montant Cotisation','amount',[],70],['cotisation_payee','Cotisation payée','select',['Non','Oui'],80],['sante','Santé','select',['En Attente','Certif Médical','QS Sport'],90],['date_certif','Date Certif Médical','date',[],100],['telephone','N° Téléphone','tel',[],110],['adresse','Adresse','textarea',[],120],['mail','Mail','email',[],130],['date_naissance','Date de naissance','date',[],140],['membre_bureau','Membre bureau','select',['Non','Oui'],150],['commentaire','Commentaire','textarea',[],160]
 ];
-async function getSeason(){if(season)return season;const q=await db().from('club_seasons').select('id,label,active').eq('label',TBK_CONFIG.seasonLabel).maybeSingle();if(q.error)throw q.error;if(!q.data)throw new Error('Saison '+TBK_CONFIG.seasonLabel+' introuvable.');season=q.data;return season;}
-async function ensureColumns(s){let q=await db().from('registration_columns').select('*').eq('season_id',s.id).order('sort_order');if(q.error)throw q.error;if(!q.data?.length&&TBK_AUTH.canAdmin()){const payload=builtins.map(([key,label,type,opts,order])=>({season_id:s.id,column_key:key,label,column_type:type,options:opts,visible:true,required:['nom','prenom'].includes(key),built_in:true,sort_order:order}));q=await db().from('registration_columns').insert(payload).select('*').order('sort_order');if(q.error)throw q.error;}columns=q.data||[];}
-async function load(){const s=await getSeason();const [r,st]=await Promise.all([db().from('registrations').select('*').eq('season_id',s.id).order('created_at'),db().from('registration_settings').select('*').eq('season_id',s.id).maybeSingle()]);if(r.error)throw r.error;if(st.error)throw st.error;rows=r.data||[];if(st.data)settings={...settings,...st.data};await ensureColumns(s);return rows;}
+
+async function getSeason(){
+  if(season)return season;
+  const q=await db().from('club_seasons').select('id,label,active').eq('label',TBK_CONFIG.seasonLabel).maybeSingle();
+  if(q.error)throw normalizeError(q.error,'Impossible de charger la saison.');
+  if(!q.data)throw new Error('Saison '+TBK_CONFIG.seasonLabel+' introuvable.');
+  season=q.data;
+  return season;
+}
+
+async function ensureColumns(s){
+  let q=await db().from('registration_columns').select('*').eq('season_id',s.id).order('sort_order');
+  if(q.error)throw normalizeError(q.error,'Impossible de charger les colonnes.');
+  if(!q.data?.length&&TBK_AUTH.canAdmin()){
+    const payload=builtins.map(([key,label,type,opts,order])=>({season_id:s.id,column_key:key,label,column_type:type,options:opts,visible:true,required:['nom','prenom'].includes(key),built_in:true,sort_order:order}));
+    q=await db().from('registration_columns').insert(payload).select('*').order('sort_order');
+    if(q.error)throw normalizeError(q.error,'Impossible d’initialiser les colonnes.');
+  }
+  columns=q.data||[];
+}
+
+async function load(){
+  try{
+    const s=await getSeason();
+    const [r,st]=await Promise.all([
+      db().from('registrations').select('*').eq('season_id',s.id).order('created_at'),
+      db().from('registration_settings').select('*').eq('season_id',s.id).maybeSingle()
+    ]);
+    if(r.error)throw r.error;
+    if(st.error)throw st.error;
+    rows=r.data||[];
+    if(st.data)settings={...settings,...st.data};
+    await ensureColumns(s);
+    return rows;
+  }catch(error){throw normalizeError(error,'Impossible de charger les inscriptions.');}
+}
+
 function read(x,key){if(Object.prototype.hasOwnProperty.call(x,key))return x[key];return x.custom_fields?.[key]??'';}
 function amount(x){if(x.montant_cotisation!==null&&x.montant_cotisation!==undefined&&x.montant_cotisation!=='')return Number(x.montant_cotisation)||0;let n=String(x.categorie).toLowerCase()==='jeune'?Number(settings.cotisation_jeune):Number(settings.cotisation_adulte);if(x.sport==='Bad et Ping')n+=Number(settings.supplement_bad_ping);if(x.ufolep==='Oui')n+=Number(settings.supplement_ufolep);if(x.membre_bureau==='Oui')n-=Number(settings.reduction_bureau);return Math.max(0,n||0);}
-function suggestedAmount(x){const y={...x,montant_cotisation:null};return amount(y);}
-function stats(){const adult=rows.filter(x=>String(x.categorie).toLowerCase()==='adulte').length,young=rows.filter(x=>String(x.categorie).toLowerCase()==='jeune').length,licensed=rows.filter(x=>x.ufolep==='Oui').length,paidRows=rows.filter(x=>x.cotisation_payee==='Oui'),theoretical=rows.reduce((s,x)=>s+amount(x),0),paid=paidRows.reduce((s,x)=>s+amount(x),0),bureauReduction=rows.filter(x=>x.membre_bureau==='Oui').reduce((s)=>s+Number(settings.reduction_bureau||0),0);return{total:rows.length,adult,young,licensed,paidCount:paidRows.length,theoretical,paid,remaining:theoretical-paid,bureauReduction,bad:rows.filter(x=>x.sport==='Bad').length,ping:rows.filter(x=>x.sport==='Ping').length,mixed:rows.filter(x=>x.sport==='Bad et Ping').length};}
-async function save(x){const s=await getSeason();const payload={...x,season_id:s.id,updated_by:currentUserId(),updated_at:new Date().toISOString()};delete payload.id;delete payload.created_at;if(!String(payload.nom||'').trim()||!String(payload.prenom||'').trim())throw new Error('Nom et prénom obligatoires.');const q=x.id?await db().from('registrations').update(payload).eq('id',x.id).select().single():await db().from('registrations').insert({...payload,client_uid:crypto.randomUUID()}).select().single();if(q.error)throw q.error;await load();return q.data;}
-async function remove(id){if(!TBK_AUTH.canAdmin())throw new Error('Suppression réservée à l’administrateur.');const q=await db().from('registrations').delete().eq('id',id);if(q.error)throw q.error;await load();}
-async function saveSettings(next){if(!TBK_AUTH.canAdmin())throw new Error('Paramétrage réservé à l’administrateur.');const s=await getSeason();for(const k of Object.keys(settings))if(Number(next[k])<0)throw new Error('Les montants doivent être positifs.');const q=await db().from('registration_settings').upsert({...next,season_id:s.id,updated_by:currentUserId(),updated_at:new Date().toISOString()},{onConflict:'season_id'}).select().single();if(q.error)throw q.error;settings={...settings,...q.data};}
-async function saveColumn(c){if(!TBK_AUTH.canAdmin())throw new Error('Action réservée à l’administrateur.');const s=await getSeason();const key=String(c.column_key||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');if(!key||!String(c.label||'').trim())throw new Error('Clé et nom de colonne obligatoires.');const q=await db().from('registration_columns').upsert({...c,column_key:key,season_id:s.id,updated_at:new Date().toISOString()},{onConflict:'season_id,column_key'});if(q.error)throw q.error;await ensureColumns(s);}
-async function deleteColumn(key){if(!TBK_AUTH.canAdmin())throw new Error('Action réservée à l’administrateur.');const c=columns.find(x=>x.column_key===key);if(c?.built_in)throw new Error('Une colonne système ne peut pas être supprimée, mais elle peut être masquée.');const s=await getSeason();const q=await db().from('registration_columns').delete().eq('season_id',s.id).eq('column_key',key);if(q.error)throw q.error;await ensureColumns(s);}
+function suggestedAmount(x){return amount({...x,montant_cotisation:null});}
+function stats(){const adult=rows.filter(x=>String(x.categorie).toLowerCase()==='adulte').length,young=rows.filter(x=>String(x.categorie).toLowerCase()==='jeune').length,licensed=rows.filter(x=>x.ufolep==='Oui').length,paidRows=rows.filter(x=>x.cotisation_payee==='Oui'),theoretical=rows.reduce((s,x)=>s+amount(x),0),paid=paidRows.reduce((s,x)=>s+amount(x),0),bureauReduction=rows.filter(x=>x.membre_bureau==='Oui').reduce(s=>s+Number(settings.reduction_bureau||0),0);return{total:rows.length,adult,young,licensed,paidCount:paidRows.length,theoretical,paid,remaining:theoretical-paid,bureauReduction,bad:rows.filter(x=>x.sport==='Bad').length,ping:rows.filter(x=>x.sport==='Ping').length,mixed:rows.filter(x=>x.sport==='Bad et Ping').length};}
+
+async function save(x){
+  try{
+    const s=await getSeason();
+    const payload={...x,season_id:s.id,...auditFields()};
+    delete payload.id;delete payload.created_at;
+    if(!String(payload.nom||'').trim()||!String(payload.prenom||'').trim())throw new Error('Nom et prénom obligatoires.');
+    const q=x.id
+      ?await db().from('registrations').update(payload).eq('id',x.id).select().single()
+      :await db().from('registrations').insert({...payload,client_uid:crypto.randomUUID()}).select().single();
+    if(q.error)throw q.error;
+    await load();
+    return q.data;
+  }catch(error){throw normalizeError(error,'Impossible d’enregistrer l’inscription.');}
+}
+
+async function remove(id){
+  if(!TBK_AUTH.canAdmin())throw new Error('Suppression réservée à l’administrateur.');
+  try{const q=await db().from('registrations').delete().eq('id',id);if(q.error)throw q.error;await load();}
+  catch(error){throw normalizeError(error,'Impossible de supprimer l’inscription.');}
+}
+
+async function saveSettings(next){
+  if(!TBK_AUTH.canAdmin())throw new Error('Paramétrage réservé à l’administrateur.');
+  for(const k of Object.keys(settings))if(Number(next[k])<0)throw new Error('Les montants doivent être positifs.');
+  try{
+    const s=await getSeason();
+    const q=await db().from('registration_settings').upsert({...next,season_id:s.id,...auditFields()},{onConflict:'season_id'}).select().single();
+    if(q.error)throw q.error;
+    settings={...settings,...q.data};
+  }catch(error){throw normalizeError(error,'Impossible d’enregistrer le paramétrage.');}
+}
+
+async function saveColumn(c){
+  if(!TBK_AUTH.canAdmin())throw new Error('Action réservée à l’administrateur.');
+  const s=await getSeason();
+  const key=String(c.column_key||'').trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');
+  if(!key||!String(c.label||'').trim())throw new Error('Clé et nom de colonne obligatoires.');
+  const q=await db().from('registration_columns').upsert({...c,column_key:key,season_id:s.id,updated_at:new Date().toISOString()},{onConflict:'season_id,column_key'});
+  if(q.error)throw normalizeError(q.error,'Impossible d’enregistrer la colonne.');
+  await ensureColumns(s);
+}
+
+async function deleteColumn(key){if(!TBK_AUTH.canAdmin())throw new Error('Action réservée à l’administrateur.');const c=columns.find(x=>x.column_key===key);if(c?.built_in)throw new Error('Une colonne système ne peut pas être supprimée, mais elle peut être masquée.');const s=await getSeason();const q=await db().from('registration_columns').delete().eq('season_id',s.id).eq('column_key',key);if(q.error)throw normalizeError(q.error,'Impossible de supprimer la colonne.');await ensureColumns(s);}
 async function moveColumn(key,delta){const idx=columns.findIndex(x=>x.column_key===key),j=idx+delta;if(idx<0||j<0||j>=columns.length)return;const a=columns[idx],b=columns[j];await Promise.all([saveColumn({...a,sort_order:b.sort_order}),saveColumn({...b,sort_order:a.sort_order})]);await ensureColumns(await getSeason());}
+
 window.TBK_REG={load,save,remove,saveSettings,saveColumn,deleteColumn,moveColumn,rows:()=>rows,settings:()=>settings,columns:()=>columns,season:()=>season,read,amount,suggestedAmount,stats};
 })();
